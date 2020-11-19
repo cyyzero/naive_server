@@ -65,8 +65,8 @@ static void process_get(const http_request* req, http_response* res)
     int fd = -1;
     sds payload = sdsempty();
     // 
-    sds path = sdsnew(root_dir);
-    sds wholepath  = sdscat(path, req->location);
+    sds path = sdsdup(req->location);
+    sds wholepath  = sdscat(root_dir, path);
 
     if(stat(wholepath, &st) < 0)
         goto err;
@@ -113,7 +113,7 @@ static void process_get(const http_request* req, http_response* res)
 
         closedir(d);
 
-        http_header_append(&(res->header), "Content-Type", "text/html");
+        http_header_append(&(res->header), sdsnew("Content-Type"), sdsnew("text/html"));
     } else {
         // is a file
         const char *type = sdsnew(guess_content_type(path));
