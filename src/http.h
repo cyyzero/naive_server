@@ -36,7 +36,7 @@ static int http_status_num[] = {
 
 static const char* http_status_str[] = {
     "200",
-    "400"
+    "400",
     "404",
     "500",
     "505",
@@ -44,7 +44,7 @@ static const char* http_status_str[] = {
 
 static const char* http_status_desc[] = {
     "OK",
-    "Bad Request"
+    "Bad Request",
     "Not Found",
     "Internal Server Error",
     "HTTP Version Not Supported",

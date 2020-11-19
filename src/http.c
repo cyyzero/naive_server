@@ -265,7 +265,7 @@ dynamic_string http_response_to_buffer(http_response* response)
 
     for (int i = 0; i < response->header.length; ++i)
     {
-        response->raw_data = sdscatfmt(response->raw_data, "%s: %s\r\n", response->header.items[i].key, response->header.items->value);
+        response->raw_data = sdscatfmt(response->raw_data, "%s: %s\r\n", response->header.items[i].key, response->header.items[i].value);
     }
     response->raw_data = sdscat(response->raw_data, "\r\n");
     response->raw_data = sdscatlen(response->raw_data, response->body, sdslen(response->body));

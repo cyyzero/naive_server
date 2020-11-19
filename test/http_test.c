@@ -1,4 +1,5 @@
 #include "../src/http.h"
+#include "../src/option.h"
 #include <stdio.h>
 
 void str_view_show(str_view sv)
@@ -44,11 +45,18 @@ void test_http_response()
     http_response_free(&res);
 }
 
-int main()
+int main(int argc, char*argv[])
 {
-    test_http_request();
-    puts("\n\n\n");
-    test_http_response();
+    // test_http_request();
+    // puts("\n\n\n");
+    // test_http_response();
+    struct options options;
+    options = parse_options(argc, argv);
+    
+    server_init(&options);
+
+    server_run();
+    server_destroy();
 
     // sds str=sdsnew("test");
     // printf("%d\n", strcmp(str, "test"));
