@@ -285,7 +285,9 @@ dynamic_string http_request_parse_location(dynamic_string location)
         if (location[i] == '?')
         {
             path = sdsnewlen(location, i);
+            return path;
         }
     }
-    return location;
+    path = sdsnew(location);
+    return path;
 }

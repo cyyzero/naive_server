@@ -30,7 +30,7 @@ static void process_get(const http_request* req, http_response* res)
 
 static void process_post(const http_request* req, http_response* res)
 {
-    http_header* header = &req->header;
+    const http_header* header = &req->header;
     http_header_item* item = NULL;
     
 
@@ -71,11 +71,11 @@ static void socket_read_cb(struct bufferevent* bev, void* arg)
     switch (req.method)
     {
     case GET:
-        process_get(&res, &req);
+        process_get(&req, &res);
         break;
 
     case POST:
-        process_post(&res, &req);
+        process_post(&req, &res);
         break;
 
     default:
