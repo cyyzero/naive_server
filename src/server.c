@@ -7,7 +7,8 @@
 #include <event2/bufferevent.h>
 
 #include "option.h"
-
+#include "http.h"
+#include "dynamic_string.h"
 struct server_t
 {
     struct event_base* base;
@@ -15,19 +16,71 @@ struct server_t
 
 static struct server_t server;
 
+static const char* root_dir;
+
+static void process_get(const http_request* req, http_response* res)
+{
+    
+}
+
+static void process_post(const http_request* req, http_response* res)
+{
+
+}
+
 static void socket_read_cb(struct bufferevent* bev, void* arg)
 {
     char msg[4096];
+    sds buf = NULL;
+    http_request req;
+    http_response res;
+
+    http_request_init(&req);
+    http_response_init(&res);
 
     size_t len = bufferevent_read(bev, msg, sizeof(msg));
+    int ret = 0;
+    if (len == sizeof(msg))
+    {
+        buf = sdsnewlen(msg, len);
+        do {
+            len = bufferevent_read(bev, msg, sizeof(msg));
+            buf = sdscatlen(buf, msg, len);
+        } while (len < sizeof(msg));
+        ret = http_request_from_buffer(&req, buf, sdslen(buf));
+    }
+    else
+    {
+        ret = http_request_from_buffer(&req, msg, len);
+    }
+    
+    if (ret == -1)
+    {
+        res.status = INTERNAL_ERROR;
+        goto end;
+    }
 
-    msg[len] = '\0';
-    printf("recv the client msg: %s", msg);
+    switch (req.method)
+    {
+    case GET:
+        process_get(&res, &req);
+        break;
 
-    char reply_msg[4096] = "I have recvieced the msg: ";
+    case POST:
+        process_post(&res, &req);
+        break;
 
-    strcat(reply_msg + strlen(reply_msg), msg);
-    bufferevent_write(bev, reply_msg, strlen(reply_msg));
+    default:
+        res.status = INTERNAL_ERROR;
+        break;
+    }
+
+end:
+    http_response_to_buffer(&res);
+    bufferevent_write(bev, res.raw_data, sdslen(res.raw_data));
+
+    http_request_free(&req);
+    http_response_free(&res);
 }
 
 static void event_cb(struct bufferevent *bev, short event, void *arg)
@@ -68,6 +121,7 @@ void server_init(struct options* options)
     int errno_save;
     evutil_socket_t listener;
 
+    root_dir = options->docroot;
     listener = socket(AF_INET, SOCK_STREAM, 0);
     if (listener == -1)
     {
