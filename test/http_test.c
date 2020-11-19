@@ -57,7 +57,10 @@ int main(int argc, char*argv[])
 
     server_run();
     server_destroy();
-
+    // test_http_request();
+    // puts("\n\n\n");
+    // test_http_response();
+    // test_http_path();
     // sds str=sdsnew("test");
     // printf("%d\n", strcmp(str, "test"));
 }
