@@ -62,7 +62,7 @@ typedef struct
 http_header http_header_init();
 void http_header_append(http_header* header, dynamic_string key, dynamic_string value);
 http_header_item* http_header_find(http_header* header, const char* key);
-void http_header_free();
+void http_header_free(http_header* header);
 
 typedef struct
 {
