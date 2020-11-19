@@ -122,7 +122,7 @@ static void process_get(const http_request* req, http_response* res)
             goto err;
         }
 
-        http_header_append(&(res->header), "Content-Type", type);
+        http_header_append(&(res->header), sdsnew("Content-Type"), sdsnew(type));
 
         char buff[4096];
         int n = 0;
