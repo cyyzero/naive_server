@@ -20,6 +20,7 @@ static const char*http_method_str[] =
 enum http_status
 {
     OK,
+    BAD_REQUEST,
     NOT_FOUND,
     INTERNAL_ERROR,
     VERSION_NOT_SUPPORT,
@@ -27,6 +28,7 @@ enum http_status
 
 static int http_status_num[] = {
     200,
+    400,
     404,
     500,
     505,
@@ -34,6 +36,7 @@ static int http_status_num[] = {
 
 static const char* http_status_str[] = {
     "200",
+    "400"
     "404",
     "500",
     "505",
@@ -41,6 +44,7 @@ static const char* http_status_str[] = {
 
 static const char* http_status_desc[] = {
     "OK",
+    "Bad Request"
     "Not Found",
     "Internal Server Error",
     "HTTP Version Not Supported",
@@ -99,5 +103,9 @@ int http_request_from_buffer(http_request* request, const char* buf, size_t leng
 
 // 
 dynamic_string http_response_to_buffer(http_response* response);
+void http_response_add_header(http_response* response, dynamic_string key, dynamic_string value);
 
+
+// process uri
+dynamic_string http_request_parse_location(dynamic_string loation);
 #endif // HTTP_H

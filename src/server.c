@@ -18,6 +18,11 @@ static struct server_t server;
 
 static const char* root_dir;
 
+static void process_post_file(const http_request* req, http_response* res)
+{
+    sds body = req->body;
+}
+
 static void process_get(const http_request* req, http_response* res)
 {
     
@@ -25,6 +30,9 @@ static void process_get(const http_request* req, http_response* res)
 
 static void process_post(const http_request* req, http_response* res)
 {
+    http_header* header = &req->header;
+    http_header_item* item = NULL;
+    
 
 }
 

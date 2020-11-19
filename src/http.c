@@ -265,3 +265,12 @@ dynamic_string http_response_to_buffer(http_response* response)
     response->raw_data = sdscatlen(response->raw_data, response->body, sdslen(response->body));
 }
 
+void http_response_add_header(http_response* response, dynamic_string key, dynamic_string value)
+{
+    http_header_append(&response->header, key, value);
+}
+
+dynamic_string http_request_parse_location(dynamic_string loation)
+{
+
+}
