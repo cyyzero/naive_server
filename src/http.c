@@ -22,7 +22,7 @@ void http_header_append(http_header *header, dynamic_string key, dynamic_string 
     if (header->length == header->capacity)
     {
         header->capacity *= 2;
-        header->items = realloc(header->items, header->capacity);
+        header->items = realloc(header->items, header->capacity * sizeof(http_header_item));
         if (header->items == NULL)
         {
             perror("out of memory.");
@@ -122,6 +122,7 @@ int http_request_from_buffer(http_request* request, const char* buf, size_t leng
     if (length <= 4)
         return -1;
     int beg, end;
+    dynamic_string key = NULL, value = NULL;
 
     // parse start line
     // parse method
@@ -179,7 +180,7 @@ int http_request_from_buffer(http_request* request, const char* buf, size_t leng
 
     // parse headers
     // pass char '\r\n'
-    dynamic_string key, value;
+
     beg = (end += 2);
     if (beg >= length)
     {
@@ -197,14 +198,14 @@ int http_request_from_buffer(http_request* request, const char* buf, size_t leng
         if (end == length)
         {
             // TODO: incomplete msg, need to do something 
-            return -1;
+            goto parse_failed;
         }
         key = sdsnewlen(buf + beg, end-beg);
         // pass ": "
         beg = (end += 2);
         if (end >= length)
         {
-            return -1;
+            goto parse_failed;
         }
         while (end < length && buf[end] != '\r')
         {
@@ -212,7 +213,7 @@ int http_request_from_buffer(http_request* request, const char* buf, size_t leng
         }
         if (end == length)
         {
-            return -1;
+            goto parse_failed;
         }
         value = sdsnewlen(buf + beg, end-beg);
         http_header_append(&request->header, key, value);
@@ -250,6 +251,11 @@ int http_request_from_buffer(http_request* request, const char* buf, size_t leng
 
     return 0;
 
+parse_failed:
+    sdsfree(key);
+    sdsfree(value);
+    return -1;
+
 }
 
 dynamic_string http_response_to_buffer(http_response* response)
@@ -265,3 +271,21 @@ dynamic_string http_response_to_buffer(http_response* response)
     response->raw_data = sdscatlen(response->raw_data, response->body, sdslen(response->body));
 }
 
+void http_response_add_header(http_response* response, dynamic_string key, dynamic_string value)
+{
+    http_header_append(&response->header, key, value);
+}
+
+dynamic_string http_request_parse_location(dynamic_string location)
+{
+    sds path = NULL;
+    int len = sdslen(location);
+    for (int i = 0; i < len; ++i)
+    {
+        if (location[i] == '?')
+        {
+            path = sdsnewlen(location, i);
+        }
+    }
+    return location;
+}

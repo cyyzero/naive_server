@@ -24,39 +24,44 @@ static struct server_t server;
 static const char* root_dir;
 
 static const struct table_entry {
-	const char *extension;
-	const char *content_type;
+    const char *extension;
+    const char *content_type;
 } content_type_table[] = {
-	{ "txt", "text/plain" },
-	{ "c", "text/plain" },
-	{ "h", "text/plain" },
-	{ "html", "text/html" },
-	{ "htm", "text/htm" },
-	{ "css", "text/css" },
-	{ "gif", "image/gif" },
-	{ "jpg", "image/jpeg" },
-	{ "jpeg", "image/jpeg" },
-	{ "png", "image/png" },
-	{ "pdf", "application/pdf" },
-	{ "ps", "application/postscript" },
-	{ NULL, NULL },
+    { "txt", "text/plain" },
+    { "c", "text/plain" },
+    { "h", "text/plain" },
+    { "html", "text/html" },
+    { "htm", "text/htm" },
+    { "css", "text/css" },
+    { "gif", "image/gif" },
+    { "jpg", "image/jpeg" },
+    { "jpeg", "image/jpeg" },
+    { "png", "image/png" },
+    { "pdf", "application/pdf" },
+    { "ps", "application/postscript" },
+    { NULL, NULL },
 };
 
 static const char *guess_content_type(const char *path)
 {
-	const char *last_period, *extension;
-	const struct table_entry *ent;
-	last_period = strrchr(path, '.');
-	if (!last_period || strchr(last_period, '/'))
-		goto not_found; /* no exension */
-	extension = last_period + 1;
-	for (ent = &content_type_table[0]; ent->extension; ++ent) {
-		if (!evutil_ascii_strcasecmp(ent->extension, extension))
-			return ent->content_type;
-	}
+    const char *last_period, *extension;
+    const struct table_entry *ent;
+    last_period = strrchr(path, '.');
+    if (!last_period || strchr(last_period, '/'))
+        goto not_found; /* no exension */
+    extension = last_period + 1;
+    for (ent = &content_type_table[0]; ent->extension; ++ent) {
+        if (!evutil_ascii_strcasecmp(ent->extension, extension))
+            return ent->content_type;
+    }
 
 not_found:
-	return "application/misc";
+    return "application/misc";
+
+}
+static void process_post_file(const http_request* req, http_response* res)
+{
+    sds body = req->body;
 }
 
 static void process_get(const http_request* req, http_response* res)
@@ -89,16 +94,16 @@ static void process_get(const http_request* req, http_response* res)
                     "<!DOCTYPE html>\n"
                     "<html>\n <head>\n"
                     "  <meta charset='utf-8'>\n"
-		    "  <title>%s</title>\n"
-		    "  <base href='%s%s'>\n"
-		    " </head>\n"
-		    " <body>\n"
-		    "  <h1>%s</h1>\n"
-		    "  <ul>\n",
-		    path, /* XXX html-escape this. */
-		    path, /* XXX html-escape this? */
-		    trail,
-		    path /* XXX html-escape this */);
+            "  <title>%s</title>\n"
+            "  <base href='%s%s'>\n"
+            " </head>\n"
+            " <body>\n"
+            "  <h1>%s</h1>\n"
+            "  <ul>\n",
+            path, /* XXX html-escape this. */
+            path, /* XXX html-escape this? */
+            trail,
+            path /* XXX html-escape this */);
 
         while((ent = readdir(d))) {
             const char *name = ent->d_name;
@@ -148,6 +153,9 @@ done:
 
 static void process_post(const http_request* req, http_response* res)
 {
+    http_header* header = &req->header;
+    http_header_item* item = NULL;
+    
 
 }
 
