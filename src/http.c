@@ -122,6 +122,7 @@ int http_request_from_buffer(http_request* request, const char* buf, size_t leng
     if (length <= 4)
         return -1;
     int beg, end;
+    dynamic_string key = NULL, value = NULL;
 
     // parse start line
     // parse method
@@ -179,7 +180,7 @@ int http_request_from_buffer(http_request* request, const char* buf, size_t leng
 
     // parse headers
     // pass char '\r\n'
-    dynamic_string key, value;
+
     beg = (end += 2);
     if (beg >= length)
     {
@@ -197,14 +198,14 @@ int http_request_from_buffer(http_request* request, const char* buf, size_t leng
         if (end == length)
         {
             // TODO: incomplete msg, need to do something 
-            return -1;
+            goto parse_failed;
         }
         key = sdsnewlen(buf + beg, end-beg);
         // pass ": "
         beg = (end += 2);
         if (end >= length)
         {
-            return -1;
+            goto parse_failed;
         }
         while (end < length && buf[end] != '\r')
         {
@@ -212,7 +213,7 @@ int http_request_from_buffer(http_request* request, const char* buf, size_t leng
         }
         if (end == length)
         {
-            return -1;
+            goto parse_failed;
         }
         value = sdsnewlen(buf + beg, end-beg);
         http_header_append(&request->header, key, value);
@@ -249,6 +250,11 @@ int http_request_from_buffer(http_request* request, const char* buf, size_t leng
     }
 
     return 0;
+
+parse_failed:
+    sdsfree(key);
+    sdsfree(value);
+    return -1;
 
 }
 
