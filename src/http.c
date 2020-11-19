@@ -22,7 +22,7 @@ void http_header_append(http_header *header, dynamic_string key, dynamic_string 
     if (header->length == header->capacity)
     {
         header->capacity *= 2;
-        header->items = realloc(header->items, header->capacity);
+        header->items = realloc(header->items, header->capacity * sizeof(http_header_item));
         if (header->items == NULL)
         {
             perror("out of memory.");
@@ -276,7 +276,16 @@ void http_response_add_header(http_response* response, dynamic_string key, dynam
     http_header_append(&response->header, key, value);
 }
 
-dynamic_string http_request_parse_location(dynamic_string loation)
+dynamic_string http_request_parse_location(dynamic_string location)
 {
-
+    sds path = NULL;
+    int len = sdslen(location);
+    for (int i = 0; i < len; ++i)
+    {
+        if (location[i] == '?')
+        {
+            path = sdsnewlen(location, i);
+        }
+    }
+    return location;
 }
