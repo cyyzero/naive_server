@@ -162,7 +162,7 @@ done:
 
 static void process_post(const http_request* req, http_response* res)
 {
-    http_header* header = &req->header;
+    const http_header* header = &req->header;
     http_header_item* item = NULL;
     
 
