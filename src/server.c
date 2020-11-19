@@ -69,9 +69,10 @@ static void process_get(const http_request* req, http_response* res)
     struct stat st;
     int fd = -1;
     sds payload = sdsempty();
+    sds length = sdsempty();
     // 
     sds path = sdsdup(req->location);
-    sds wholepath  = sdscat(root_dir, path);
+    sds wholepath  = sdscat(sdsnew(root_dir), path);
 
     if(stat(wholepath, &st) < 0)
         goto err;
@@ -119,6 +120,7 @@ static void process_get(const http_request* req, http_response* res)
         closedir(d);
 
         http_header_append(&(res->header), sdsnew("Content-Type"), sdsnew("text/html"));
+
     } else {
         // is a file
         const char *type = sdsnew(guess_content_type(path));
@@ -135,6 +137,7 @@ static void process_get(const http_request* req, http_response* res)
             payload = sdscatlen(payload, buff, n);
         }
     }
+    res->status = OK;
     goto done;
 
 err:
@@ -144,7 +147,13 @@ err:
         close(fd);
     }
 done:
-    res->status = OK;
+    length = sdscatfmt(length, "%u", sdslen(payload));
+    char date[50];
+    evutil_date_rfc1123(date, sizeof(date), NULL);
+    http_header_append(&(res->header), sdsnew("Content-Length"), length);
+    http_header_append(&(res->header), sdsnew("Date"), sdsnew(date));
+
+
     res->body = sdsdup(payload);
     sdsfree(wholepath);
     sdsfree(path);
