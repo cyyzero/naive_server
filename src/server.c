@@ -6,6 +6,11 @@
 #include <event.h>
 #include <event2/bufferevent.h>
 
+#include <sys/stat.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include <unistd.h>
+
 #include "option.h"
 #include "http.h"
 #include "dynamic_string.h"
@@ -18,9 +23,127 @@ static struct server_t server;
 
 static const char* root_dir;
 
+static const struct table_entry {
+	const char *extension;
+	const char *content_type;
+} content_type_table[] = {
+	{ "txt", "text/plain" },
+	{ "c", "text/plain" },
+	{ "h", "text/plain" },
+	{ "html", "text/html" },
+	{ "htm", "text/htm" },
+	{ "css", "text/css" },
+	{ "gif", "image/gif" },
+	{ "jpg", "image/jpeg" },
+	{ "jpeg", "image/jpeg" },
+	{ "png", "image/png" },
+	{ "pdf", "application/pdf" },
+	{ "ps", "application/postscript" },
+	{ NULL, NULL },
+};
+
+static const char *guess_content_type(const char *path)
+{
+	const char *last_period, *extension;
+	const struct table_entry *ent;
+	last_period = strrchr(path, '.');
+	if (!last_period || strchr(last_period, '/'))
+		goto not_found; /* no exension */
+	extension = last_period + 1;
+	for (ent = &content_type_table[0]; ent->extension; ++ent) {
+		if (!evutil_ascii_strcasecmp(ent->extension, extension))
+			return ent->content_type;
+	}
+
+not_found:
+	return "application/misc";
+}
+
 static void process_get(const http_request* req, http_response* res)
 {
-    
+    struct stat st;
+    int fd = -1;
+    sds payload = sdsempty();
+    // 
+    sds path = sdsnew(root_dir);
+    sds wholepath  = sdscat(path, req->location);
+
+    if(stat(wholepath, &st) < 0)
+        goto err;
+
+    if(S_ISDIR(st.st_mode)) {
+        // if path is a directory
+
+        DIR *d;
+        struct dirent *ent;
+
+        sds trail = sdsempty();
+
+        if(!sdslen(wholepath) || req->location[sdslen(wholepath) - 1] != '/')
+            sdscpy(trail, "/");
+
+        if(!(d = opendir(wholepath)))
+            goto err;
+
+        payload = sdscatfmt(payload,
+                    "<!DOCTYPE html>\n"
+                    "<html>\n <head>\n"
+                    "  <meta charset='utf-8'>\n"
+		    "  <title>%s</title>\n"
+		    "  <base href='%s%s'>\n"
+		    " </head>\n"
+		    " <body>\n"
+		    "  <h1>%s</h1>\n"
+		    "  <ul>\n",
+		    path, /* XXX html-escape this. */
+		    path, /* XXX html-escape this? */
+		    trail,
+		    path /* XXX html-escape this */);
+
+        while((ent = readdir(d))) {
+            const char *name = ent->d_name;
+
+            payload = sdscatfmt(payload,
+                "    <li><a href=\"%s\">%s</a>\n",
+                name, name);
+
+        }
+
+        payload = sdscat(payload, "</ul></body></html>\n");
+
+        closedir(d);
+
+        http_header_append(&(res->header), "Content-Type", "text/html");
+    } else {
+        // is a file
+        const char *type = sdsnew(guess_content_type(path));
+
+        if((fd = open(wholepath, O_RDONLY)) < 0) {
+            goto err;
+        }
+
+        http_header_append(&(res->header), "Content-Type", type);
+
+        char buff[4096];
+        int n = 0;
+        while(n = read(fd, buff, 4096)) {
+            payload = sdscatlen(payload, buff, n);
+        }
+    }
+    goto done;
+
+err:
+    res->status = NOT_FOUND;
+    payload = sdscatfmt(payload, "Document %S was not found", path);
+    if(fd >= 0) {
+        close(fd);
+    }
+done:
+    res->status = OK;
+    res->body = sdsdup(payload);
+    sdsfree(wholepath);
+    sdsfree(path);
+    sdsfree(payload);
 }
 
 static void process_post(const http_request* req, http_response* res)
@@ -63,11 +186,11 @@ static void socket_read_cb(struct bufferevent* bev, void* arg)
     switch (req.method)
     {
     case GET:
-        process_get(&res, &req);
+        process_get(&req, &res);
         break;
 
     case POST:
-        process_post(&res, &req);
+        process_post(&req, &res);
         break;
 
     default:
