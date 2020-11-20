@@ -1,27 +1,32 @@
 #ifndef HASH_TABLE_H
 #include "uhash.h"
 #include "sds.h"
-typedef struct {
-    int ip;
-    int port;
-} request_buffer_key;
 
 typedef struct {
-    request_buffer_key key;
+    int key;
     sds buffer;
+    int status;
+    int times;
     UT_hash_handle hh;
-} request_buffer;
+} connection_info;
 
-#define HASH_TABLE_ADD(container, item) HASH_ADD(hh, container, key, sizeof(request_buffer_key), item)
-#define HASH_TABLE_FIND(container, target_key_ptr, item) HASH_FIND(hh, container, (target_key_ptr), sizeof(request_buffer_key), item)
+enum connection_status
+{
+    CONN_START,
+    CONN_SENDING,
+    CONN_END
+};
 
-#define HASH_TABLE_FREE(container) \
-do { \
-    request_buffer* p, *tmp; \
-    HASH_ITER(hh, container, p, tmp) { \
-        HASH_DEL(container, p); \
-        free(p); \
-    } \
-} while (0)
+#define MAX_TIMES 5
+#define TIME_OUT  1
+#define KEEP_ALIVE_PARAMS "timeout=10, max=5"
+
+extern connection_info* connections;
+
+connection_info* connection_add(int fd);
+connection_info* connection_find(int fd);
+void connection_remove(int fd);
+void connection_mask_end(int fd);
+void connection_update(int fd, int* is_start, int* is_close);
 
 #endif // HASH_TABLE_H

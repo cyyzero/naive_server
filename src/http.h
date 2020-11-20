@@ -143,4 +143,6 @@ void http_connection_set_request_cb(http_connection *conn, void (*cb)(http_conne
 void http_connection_free(http_connection *conn);
 
 
+// check whether Connection: close in header
+int is_connection_close(const http_request* req);
 #endif // HTTP_H
