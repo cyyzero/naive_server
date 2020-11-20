@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <memory.h>
 #include <stdlib.h>
+#include <event.h>
 
 http_header http_header_init()
 {
@@ -232,7 +233,7 @@ int http_request_from_buffer(http_request* request, const char* buf, size_t leng
     http_header_item *item = http_header_find(&request->header, "Content-Length");
     if (item)
     {
-        body_length = atoi(item->value);
+        body_length = length - beg;
         request->body = sdsnewlen(buf + beg, body_length);
     }
     else
@@ -347,6 +348,208 @@ dynamic_string http_parse_location(dynamic_string location)
     return path;
 }
 
+void http_connection_done(http_connection *conn)
+{
+    conn->state = CONN_DISCONNECTED;
+    (*conn->closecb)(conn, conn->closecb_arg);
+    http_request_free(conn->request);
+    conn->request = NULL;
+}
+
+int read_request(http_connection *conn)
+{
+    int i;
+    char msg[4096];
+    sds buf = NULL;
+    struct bufferevent *bev = conn->bufev;
+    conn->request = malloc(sizeof(http_request));
+    http_request *req = conn->request;
+    http_request_init(req);
+
+    size_t len = bufferevent_read(bev, msg, sizeof(msg));
+    int ret = 0;
+    if (len == sizeof(msg))
+    {
+        buf = sdsnewlen(msg, len);
+        while ((len = bufferevent_read(bev, msg, sizeof(msg))))
+        {
+            buf = sdscatlen(buf, msg, len);
+        }
+        ret = http_request_from_buffer(req, buf, sdslen(buf));
+    }
+    else
+    {
+        ret = http_request_from_buffer(req, msg, len);
+    }
+
+    if(ret == -1) {
+        return -1;
+    }
+
+    int content_len = 0, act_len = 0;
+    if(req->body)
+        content_len = act_len = sdslen(req->body);
+
+    http_header_item *item = http_header_find(&(req->header), "Content-Length");
+    if(item)
+        content_len = atoi(item->value);
+
+    printf("Content-length: %d, recieved: %d\n", content_len, act_len);
+
+    return content_len - act_len;
+}
+
+int read_body(http_connection *conn)
+{
+    int i;
+    char msg[4096];
+    sds buf = NULL;
+    struct bufferevent *bev = conn->bufev;
+    http_request *req = conn->request;
+
+    size_t len = bufferevent_read(bev, msg, sizeof(msg));
+    int ret = 0;
+    if (len == sizeof(msg))
+    {
+        buf = sdsnewlen(msg, len);
+        while ((len = bufferevent_read(bev, msg, sizeof(msg))))
+        {
+            buf = sdscatlen(buf, msg, len);
+        }
+    }
+    else
+    {
+        buf = sdsnewlen(msg, len);
+    }
+    printf("buf size: %d\n", sdslen(buf));
+    printf("body size: %d\n", sdslen(req->body));
+    req->body = sdscatsds(req->body, buf);
+
+    int content_len, act_len;
+    content_len = act_len = sdslen(req->body);
+
+    http_header_item *item = http_header_find(&(req->header), "Content-Length");
+    if(item)
+        content_len = atoi(item->value);
+    printf("Content-length: %d, recieved: %d\n", content_len, act_len);
+
+    return content_len - act_len;
+}
+
+void get_requests_cb(struct bufferevent *bufev, void *arg)
+{
+    printf("get_request...\n");
+    http_connection * conn = (http_connection *)arg;
+    int ret = 0;
+    printf("conn state: %d\n", conn->state);
+    switch (conn->state)
+    {
+    case CONN_IDLE:
+        if(conn->request == NULL) {
+            ret = read_request(conn);
+            if(ret > 0){
+                conn->state = CONN_READING;
+                printf("still some bits wating...\n");
+            }
+            else if(ret == 0) {
+                goto done;
+            }
+            else {
+                goto err;
+            }
+        }
+        break;
+    case CONN_READING:
+        ret = read_body(conn);
+        if(ret > 0){
+            conn->state = CONN_READING;
+        }
+        else if(ret == 0) {
+            goto done;
+        }
+        else {
+            goto err;
+        }
+        break;
+    case CONN_WRITING:
+        /* code */
+        break;
+    
+    default:
+        break;
+    }
+
+    return;
+done:
+    conn->state = CONN_WRITING;
+    (*conn->cb)(conn, conn->cb_arg);
+    http_request_free(conn->request);
+    conn->request = NULL;
+    conn->state = CONN_IDLE;
+    return;
+err:
+    printf("http request read error\n");
+    http_request_free(conn->request);
+    conn->request = NULL;
+}
+
+void http_connection_cb(struct bufferevent *bufev, short event, void *arg)
+{
+    http_connection *conn = (http_connection *) arg;
+
+    if (event & BEV_EVENT_EOF)
+        printf("eof reached\n");
+    else if (event & BEV_EVENT_ERROR)
+        printf("some other error\n");
+    else if (event & BEV_EVENT_READING)
+        printf("BEV_EVENT_READING\n");
+    else if (event & BEV_EVENT_WRITING)
+        printf("BEV_EVENT_WRITING\n");
+    else if (event & BEV_EVENT_TIMEOUT)
+        printf("BEV_EVENT_TIMEOUT\n");
+    else if (event & BEV_EVENT_CONNECTED){
+        printf("BEV_EVENT_CONNECTED\n");
+        http_connection_free(conn);
+    }
+    else {
+        printf("unknow event\n");
+    }
+}
+
+void http_connection_init(http_connection *conn, struct event_base *base, struct bufferevent *env)
+{
+    conn->base = base;
+    conn->bufev = env;
+    conn->state = CONN_IDLE;
+    conn->cb = NULL;
+    conn->cb_arg = NULL;
+    conn->closecb = NULL;
+    conn->closecb_arg = NULL;
+    conn->request = NULL;
+}
+
+http_connection *http_connection_new(struct event_base *base, struct bufferevent *env)
+{
+    http_connection *conn = malloc(sizeof(http_connection));
+    http_connection_init(conn, base, env);
+
+    return conn;
+}
+
+void http_connection_set_request_cb(http_connection *conn, void (*cb)(http_connection *conn, void *), void *arg)
+{
+    conn->cb = cb;
+    conn->cb_arg = arg;
+}
+
+void http_connection_free(http_connection *conn)
+{
+    if(conn) {
+        if(conn->request != NULL) {
+            http_request_free(conn->request);
+        }
+        free(conn);
+    }
 int is_connection_close(const http_request* req)
 {
     const http_header* header = &req->header;
