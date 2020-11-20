@@ -1,10 +1,11 @@
 #include "../src/http.h"
 #include "../src/option.h"
+#include "../src/server.h"
 #include <stdio.h>
 
 void str_view_show(str_view sv)
 {
-    for (int i = 0; i < sv.length; ++i)
+    for (size_t i = 0; i < sv.length; ++i)
         putchar(sv.str[i]);
 }
 
@@ -57,7 +58,10 @@ int main(int argc, char*argv[])
 
     server_run();
     server_destroy();
-
+    // test_http_request();
+    // puts("\n\n\n");
+    // test_http_response();
+    // test_http_path();
     // sds str=sdsnew("test");
     // printf("%d\n", strcmp(str, "test"));
 }

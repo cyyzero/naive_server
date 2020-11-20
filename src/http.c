@@ -34,7 +34,7 @@ void http_header_append(http_header *header, dynamic_string key, dynamic_string 
     ++header->length;
 }
 
-http_header_item* http_header_find(http_header* header, const char* key)
+http_header_item* http_header_find(const http_header* header, const char* key)
 {
     for (int i = 0; i < header->length; ++i)
     {
@@ -58,7 +58,7 @@ void http_header_free(http_header* header)
 
 static dynamic_string parse_chunked_body(const char* buf, size_t length)
 {
-    int beg, end, chunked_length;
+    size_t beg, end, chunked_length;
     beg = end = 0;
     dynamic_string body = sdsempty();
     for (;end < length;)
@@ -105,7 +105,7 @@ void http_response_init(http_response* res)
 {
     res->status = 0;
     res->header = http_header_init();
-    res->body = NULL;
+    res->body = sdsempty();
     res->raw_data = sdsempty();
 }
 
@@ -121,7 +121,7 @@ int http_request_from_buffer(http_request* request, const char* buf, size_t leng
 {
     if (length <= 4)
         return -1;
-    int beg, end;
+    size_t beg, end;
     dynamic_string key = NULL, value = NULL;
 
     // parse start line
@@ -276,10 +276,63 @@ void http_response_add_header(http_response* response, dynamic_string key, dynam
     http_header_append(&response->header, key, value);
 }
 
-dynamic_string http_request_parse_location(dynamic_string location)
+dynamic_string http_parse_location(dynamic_string location)
 {
     sds path = NULL;
     int len = sdslen(location);
+    int i = 0, j = 0;
+    for (; j < len;)
+    {
+        if (location[j] == '%')
+        {
+            char decoded = '*';
+            uint16_t num = *((uint16_t*)(location+j+1));
+#ifdef _DEBUG
+            printf("%d\n", (int)num);
+#endif
+            switch (num)
+            {
+            // %20 space
+            case 12338:
+                decoded = ' ';
+                break;
+            // %21 !
+            case 12594:
+                decoded = '!';
+                break;
+
+            // %22  "
+            case 12850:
+                decoded = '"';
+                break;
+
+            // %23 #
+            case 13106:
+                decoded = '#';
+                break;
+
+            // %24 $
+            case 13362:
+                decoded = '$';
+                break;
+
+            // %25 %
+            case 13618:
+                decoded = '%';
+                break;
+            default:
+                fprintf(stderr, "unsupported encoding uri noew");
+                break;
+            }
+            location[i++] = decoded;
+            j += 3;
+        }
+        else
+        {
+            location[i++] = location[j++];
+        }
+    }
+    sdsrange(location, 0, i-1);
     for (int i = 0; i < len; ++i)
     {
         if (location[i] == '?')
@@ -289,5 +342,6 @@ dynamic_string http_request_parse_location(dynamic_string location)
         }
     }
     path = sdsnew(location);
+
     return path;
 }
