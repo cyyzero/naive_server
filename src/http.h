@@ -108,4 +108,6 @@ void http_response_add_header(http_response* response, dynamic_string key, dynam
 
 // process uri
 dynamic_string http_parse_location(dynamic_string loation);
+// check whether Connection: close in header
+int is_connection_close(const http_request* req);
 #endif // HTTP_H

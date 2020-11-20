@@ -146,7 +146,8 @@ int http_request_from_buffer(http_request* request, const char* buf, size_t leng
     else
     {
         fprintf(stderr, "unsupport other http method");
-        return -1;
+        // unknown package
+        return -2;
     }
 
     // parse location
@@ -344,4 +345,16 @@ dynamic_string http_parse_location(dynamic_string location)
     path = sdsnew(location);
 
     return path;
+}
+
+int is_connection_close(const http_request* req)
+{
+    const http_header* header = &req->header;
+    http_header_item *item = NULL;
+    if ((item = http_header_find(header, "Connection")) &&
+        strcmp(item->value, "close") == 0)
+    {
+        return 1;
+    }
+    return 0;
 }
