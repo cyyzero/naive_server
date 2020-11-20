@@ -65,7 +65,7 @@ typedef struct
 
 http_header http_header_init();
 void http_header_append(http_header* header, dynamic_string key, dynamic_string value);
-http_header_item* http_header_find(http_header* header, const char* key);
+http_header_item* http_header_find(const http_header* header, const char* key);
 void http_header_free(http_header* header);
 
 typedef struct
@@ -107,5 +107,5 @@ void http_response_add_header(http_response* response, dynamic_string key, dynam
 
 
 // process uri
-dynamic_string http_request_parse_location(dynamic_string loation);
+dynamic_string http_parse_location(dynamic_string loation);
 #endif // HTTP_H

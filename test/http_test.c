@@ -1,10 +1,11 @@
 #include "../src/http.h"
 #include "../src/option.h"
+#include "../src/server.h"
 #include <stdio.h>
 
 void str_view_show(str_view sv)
 {
-    for (int i = 0; i < sv.length; ++i)
+    for (size_t i = 0; i < sv.length; ++i)
         putchar(sv.str[i]);
 }
 
