@@ -1,7 +1,7 @@
 # tool macros
 CC := gcc
 CCFLAGS := -levent -lssl -lcrypto -levent_openssl 
-DBGFLAGS := -g 
+DBGFLAGS := -g -D _DEBUG
 CCOBJFLAGS := $(CCFLAGS) -c 
 
 # path macros

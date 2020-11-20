@@ -20,7 +20,6 @@
 #include "http.h"
 #include "dynamic_string.h"
 #include "tls.h"
-#include "hash_table.h"
 
 #define FORM_DATA "multipart/form-data"
 #define BOUNDARY_STR "boundary="
@@ -334,6 +333,7 @@ void request_read_cb(http_connection *conn, void *arg)
 {
     http_response res;
     http_request *req = conn->request;
+    int is_first, is_end, is_close;
 
     http_response_init(&res);
 
@@ -351,6 +351,26 @@ void request_read_cb(http_connection *conn, void *arg)
         res.status = INTERNAL_ERROR;
         break;
     }
+    printf("call trans update");
+    connection_trans_state_update(conn, &is_first, &is_end);
+    is_close = is_connection_close(&req);
+    if (is_close || is_end)
+    {
+        http_header_append(&res.header, sdsnew("Connection"), sdsnew("close"));
+        conn->trans_state = TRANS_END;
+        // connection_mask_end((int)arg);
+        bufferevent_enable(conn->bufev, EV_WRITE);
+        bufferevent_disable(conn->bufev, EV_READ);
+    }
+    else
+    {
+        if (is_first)
+        {
+            struct timeval tv = {TIME_OUT, 0};
+            bufferevent_set_timeouts(conn->bufev, &tv, NULL);
+        }
+        http_header_append(&res.header, sdsnew("Keep-Alive"), sdsnew(KEEP_ALIVE_PARAMS));
+    }
 end:
     http_response_to_buffer(&res);
     bufferevent_write(conn->bufev, res.raw_data, sdslen(res.raw_data));
@@ -358,114 +378,110 @@ end:
     http_response_free(&res);
 }
 
-static void socket_read_cb(struct bufferevent *bev, void *arg)
-{
-    char msg[4096];
-    sds buf = NULL;
-    http_request req;
-    http_response res;
-    int is_close = 0;
-    int is_first, is_end;
+// static void socket_read_cb(struct bufferevent *bev, void *arg)
+// {
+//     char msg[4096];
+//     sds buf = NULL;
+//     http_request req;
+//     http_response res;
+//     int is_close = 0;
+//     int is_first, is_end;
 
-    http_request_init(&req);
-    http_response_init(&res);
-
-
-    size_t len = bufferevent_read(bev, msg, sizeof(msg));
-    int ret = 0;
-    if (len == sizeof(msg))
-    {
-        buf = sdsnewlen(msg, len);
-        while ((len = bufferevent_read(bev, msg, sizeof(msg))))
-        {
-            buf = sdscatlen(buf, msg, len);
-        }
-#ifdef _DEBUG
-        fwrite(buf, sdslen(buf), 1, stdout);
-#endif
-        ret = http_request_from_buffer(&req, buf, sdslen(buf));
-    }
-    else
-    {
-        ret = http_request_from_buffer(&req, msg, len);
-    }
-    if (ret == -2)
-        goto release;
-    if (ret == -1)
-    {
-        res.status = INTERNAL_ERROR;
-        goto end;
-    }
-
-    switch (req.method)
-    {
-    case GET:
-        process_get(&req, &res);
-        break;
-
-    case POST:
-        fwrite(msg, len, 1, stdout);
-        process_post(&req, &res);
-        break;
-
-    default:
-        res.status = INTERNAL_ERROR;
-        break;
-    }
-end:
-
-    connection_update((int)arg, &is_first, &is_end);
-    is_close |= is_connection_close(&req);
-    if (is_close || is_end)
-    {
-        http_header_append(&res.header, sdsnew("Connection"), sdsnew("close"));
-        connection_mask_end((int)arg);
-        bufferevent_enable(bev, EV_WRITE);
-        bufferevent_disable(bev, EV_READ);
-    }
-    else
-    {
-        if (is_first)
-        {
-            struct timeval tv = {TIME_OUT, 0};
-            bufferevent_set_timeouts(bev, &tv, NULL);
-        }
-        http_header_append(&res.header, sdsnew("Keep-Alive"), sdsnew(KEEP_ALIVE_PARAMS));
-    }
+//     http_request_init(&req);
+//     http_response_init(&res);
 
 
-    http_response_to_buffer(&res);
-    bufferevent_write(bev, res.raw_data, sdslen(res.raw_data));
+//     size_t len = bufferevent_read(bev, msg, sizeof(msg));
+//     int ret = 0;
+//     if (len == sizeof(msg))
+//     {
+//         buf = sdsnewlen(msg, len);
+//         while ((len = bufferevent_read(bev, msg, sizeof(msg))))
+//         {
+//             buf = sdscatlen(buf, msg, len);
+//         }
+// #ifdef _DEBUG
+//         fwrite(buf, sdslen(buf), 1, stdout);
+// #endif
+//         ret = http_request_from_buffer(&req, buf, sdslen(buf));
+//     }
+//     else
+//     {
+//         ret = http_request_from_buffer(&req, msg, len);
+//     }
+//     if (ret == -2)
+//         goto release;
+//     if (ret == -1)
+//     {
+//         res.status = INTERNAL_ERROR;
+//         goto end;
+//     }
 
-release:
-    http_request_free(&req);
-    http_response_free(&res);
-}
+//     switch (req.method)
+//     {
+//     case GET:
+//         process_get(&req, &res);
+//         break;
+
+//     case POST:
+//         fwrite(msg, len, 1, stdout);
+//         process_post(&req, &res);
+//         break;
+
+//     default:
+//         res.status = INTERNAL_ERROR;
+//         break;
+//     }
+// end:
+
+//     connection_update((int)arg, &is_first, &is_end);
+//     is_close |= is_connection_close(&req);
+//     if (is_close || is_end)
+//     {
+//         http_header_append(&res.header, sdsnew("Connection"), sdsnew("close"));
+//         // connection_mask_end((int)arg);
+//         bufferevent_enable(bev, EV_WRITE);
+//         bufferevent_disable(bev, EV_READ);
+//     }
+//     else
+//     {
+//         if (is_first)
+//         {
+//             struct timeval tv = {TIME_OUT, 0};
+//             bufferevent_set_timeouts(bev, &tv, NULL);
+//         }
+//         http_header_append(&res.header, sdsnew("Keep-Alive"), sdsnew(KEEP_ALIVE_PARAMS));
+//     }
+
+
+//     http_response_to_buffer(&res);
+//     bufferevent_write(bev, res.raw_data, sdslen(res.raw_data));
+
+// release:
+//     http_request_free(&req);
+//     http_response_free(&res);
+// }
 
 static void socket_write_cb(struct bufferevent *bev, void *arg)
 {
-    int fd = (int)arg;
-    connection_info* conn = connection_find(fd);
+    http_connection* conn = arg;
     if (conn == NULL)
     {
         fprintf(stderr, "buffer error");
         bufferevent_free(bev);
         return;
     }
-    switch (conn->status)
+    switch (conn->trans_state)
     {
-    case CONN_END:
+    case TRANS_END:
         if (evbuffer_get_length(bufferevent_get_output(bev)) == 0)
         {
             printf("close conn\n");
             // free buffer
             bufferevent_free(bev);
-            // free connection_info
-            connection_remove(fd);
+            http_connection_free(conn);
         }
         break;
-    case CONN_START:
-    case CONN_SENDING:
     default:
         break;
     }
@@ -479,8 +495,7 @@ static void event_cb(struct bufferevent *bev, short event, void *arg)
     // printf("reason: %s\n", ERR_reason_error_string(error));
     if (event & BEV_EVENT_EOF)
     {
-        int fd = (int)arg;
-        connection_remove(fd);
+        http_connection_free((http_connection*)arg);
         printf("connection closed\n");
         return;
     }
@@ -494,6 +509,7 @@ static void event_cb(struct bufferevent *bev, short event, void *arg)
     {
         printf("BEV_EVENT_TIMEOUT\n");
         bufferevent_free(bev);
+        http_connection_free((http_connection*)arg);
     }
     if (event & BEV_EVENT_CONNECTED)
         printf("BEV_EVENT_CONNECTED\n");
@@ -523,7 +539,7 @@ static void accept_cb(int fd, short events, void *arg)
 
     http_connection_set_request_cb(conn, request_read_cb, NULL);
 
-    bufferevent_setcb(bev, get_requests_cb, socket_write_cb, event_cb, arg);
+    bufferevent_setcb(bev, get_requests_cb, socket_write_cb, event_cb, conn);
 
     bufferevent_enable(bev, EV_READ | EV_PERSIST);
 }

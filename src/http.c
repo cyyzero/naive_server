@@ -493,34 +493,13 @@ err:
     conn->request = NULL;
 }
 
-void http_connection_cb(struct bufferevent *bufev, short event, void *arg)
-{
-    http_connection *conn = (http_connection *) arg;
-
-    if (event & BEV_EVENT_EOF)
-        printf("eof reached\n");
-    else if (event & BEV_EVENT_ERROR)
-        printf("some other error\n");
-    else if (event & BEV_EVENT_READING)
-        printf("BEV_EVENT_READING\n");
-    else if (event & BEV_EVENT_WRITING)
-        printf("BEV_EVENT_WRITING\n");
-    else if (event & BEV_EVENT_TIMEOUT)
-        printf("BEV_EVENT_TIMEOUT\n");
-    else if (event & BEV_EVENT_CONNECTED){
-        printf("BEV_EVENT_CONNECTED\n");
-        http_connection_free(conn);
-    }
-    else {
-        printf("unknow event\n");
-    }
-}
-
 void http_connection_init(http_connection *conn, struct event_base *base, struct bufferevent *env)
 {
     conn->base = base;
     conn->bufev = env;
     conn->state = CONN_IDLE;
+    conn->trans_state = TRANS_START;
+    conn->times = 0;
     conn->cb = NULL;
     conn->cb_arg = NULL;
     conn->closecb = NULL;
@@ -550,6 +529,41 @@ void http_connection_free(http_connection *conn)
         }
         free(conn);
     }
+}
+
+void connection_trans_state_update(http_connection* conn, int *is_start, int* is_end)
+{
+    if (!conn)
+    {
+        return;
+    }
+    *is_start = *is_end = 0;
+#ifdef _DEBUG
+#endif
+    printf("conn: %d %d\n", conn->trans_state, conn->times);
+    switch (conn->trans_state)
+    {
+    case TRANS_START:
+        *is_start = 1;
+        ++conn->times;
+        conn->trans_state = TRANS_SENDING;
+        break;
+    case TRANS_SENDING:
+        if (++conn->times >= MAX_TIMES)
+        {
+            conn->trans_state = TRANS_END;
+            *is_end = 1;
+        }
+        break;
+    case TRANS_END:
+        fprintf(stderr, "connection status error");
+        break;
+    default:
+        conn->trans_state = TRANS_END;
+        break;
+    }
+}
+
 int is_connection_close(const http_request* req)
 {
     const http_header* header = &req->header;
@@ -561,3 +575,4 @@ int is_connection_close(const http_request* req)
     }
     return 0;
 }
+

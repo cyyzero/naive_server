@@ -118,9 +118,23 @@ enum connection_state {
     CONN_WRITING
 };
 
+// state in exchange msg
+enum transfer_state
+{
+    TRANS_START,
+    TRANS_SENDING,
+    TRANS_END,
+};
+
+#define MAX_TIMES 5
+#define TIME_OUT  10
+#define KEEP_ALIVE_PARAMS "timeout=10, max=5"
+
 // http connection
 typedef struct {
     enum connection_state state;
+    enum transfer_state trans_state;
+    int times;
     struct bufferevent *bufev;
 
     http_request *request;
@@ -141,6 +155,7 @@ void get_requests_cb(struct bufferevent *bufev, void *arg);
 void http_connection_set_request_cb(http_connection *conn, void (*cb)(http_connection *conn, void *), void *arg);
 
 void http_connection_free(http_connection *conn);
+void connection_trans_state_update(http_connection* conn, int *is_start, int* is_end);
 
 
 // check whether Connection: close in header
