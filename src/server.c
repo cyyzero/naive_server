@@ -5,6 +5,8 @@
 
 #include <event.h>
 #include <event2/bufferevent.h>
+#include <event2/bufferevent_ssl.h>
+#include <openssl/err.h>
 
 #include <sys/stat.h>
 #include <dirent.h>
@@ -14,6 +16,7 @@
 #include "option.h"
 #include "http.h"
 #include "dynamic_string.h"
+#include "tls.h"
 
 #define FORM_DATA "multipart/form-data"
 #define BOUNDARY_STR "boundary="
@@ -26,7 +29,9 @@ struct server_t
 
 static struct server_t server;
 
-static const char *root_dir;
+SSL_CTX *ctx;
+
+static const char* root_dir;
 
 static const struct table_entry
 {
@@ -380,14 +385,25 @@ end:
 
 static void event_cb(struct bufferevent *bev, short event, void *arg)
 {
-
+    // unsigned long error =  bufferevent_get_openssl_error(bev);
+    // printf("lib: %s\n", ERR_lib_error_string(error));
+    // printf("func: %s\n", ERR_func_error_string(error));
+    // printf("reason: %s\n", ERR_reason_error_string(error));
     if (event & BEV_EVENT_EOF)
         printf("connection closed\n");
     else if (event & BEV_EVENT_ERROR)
         printf("some other error\n");
+    else if (event & BEV_EVENT_READING)
+        printf("BEV_EVENT_READING\n");
+    else if (event & BEV_EVENT_WRITING)
+        printf("BEV_EVENT_WRITING\n");
+    else if (event & BEV_EVENT_TIMEOUT)
+        printf("BEV_EVENT_TIMEOUT\n");
+    else if (event & BEV_EVENT_CONNECTED)
+        printf("BEV_EVENT_CONNECTED\n");
 
     //这将自动close套接字和free读写缓冲区
-    bufferevent_free(bev);
+    // bufferevent_free(bev);
 }
 
 static void accept_cb(int fd, short events, void *arg)
@@ -404,7 +420,8 @@ static void accept_cb(int fd, short events, void *arg)
 
     struct event_base *base = (struct event_base *)arg;
 
-    struct bufferevent *bev = bufferevent_socket_new(base, sockfd, BEV_OPT_CLOSE_ON_FREE);
+    // struct bufferevent* bev = bufferevent_socket_new(base, sockfd, BEV_OPT_CLOSE_ON_FREE);
+    struct bufferevent* bev = bufferevent_openssl_socket_new(base, sockfd, SSL_new(ctx), BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_CLOSE_ON_FREE);
     bufferevent_setcb(bev, socket_read_cb, NULL, event_cb, arg);
 
     bufferevent_enable(bev, EV_READ | EV_PERSIST);
@@ -414,6 +431,12 @@ void server_init(struct options *options)
 {
     int errno_save;
     evutil_socket_t listener;
+
+    SSL_init();
+    if((ctx = generate_SSL_CTX()) == NULL) {
+        perror("SSL new failed!");
+        exit(-1);
+    }
 
     root_dir = options->docroot;
     listener = socket(AF_INET, SOCK_STREAM, 0);
