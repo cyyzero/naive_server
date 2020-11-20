@@ -108,4 +108,39 @@ void http_response_add_header(http_response* response, dynamic_string key, dynam
 
 // process uri
 dynamic_string http_parse_location(dynamic_string loation);
+
+// http connection state
+enum connection_state {
+    CONN_DISCONNECTED,
+    CONN_CONNECTING,
+    CONN_IDLE,
+    CONN_READING,
+    CONN_WRITING
+};
+
+// http connection
+typedef struct {
+    enum connection_state state;
+    struct bufferevent *bufev;
+
+    http_request *request;
+
+    void (*cb)(struct http_connection *, void *);
+	void *cb_arg;
+
+	void (*closecb)(struct http_connection *, void *);
+	void *closecb_arg;
+
+    struct event_base *base;
+} http_connection;
+
+http_connection *http_connection_new(struct event_base *base, struct bufferevent *env);
+
+void get_requests_cb(struct bufferevent *bufev, void *arg);
+
+void http_connection_set_request_cb(http_connection *conn, void (*cb)(http_connection *conn, void *), void *arg);
+
+void http_connection_free(http_connection *conn);
+
+
 #endif // HTTP_H

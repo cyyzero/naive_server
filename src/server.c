@@ -1,3 +1,6 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -295,7 +298,7 @@ static void process_post(const http_request *req, http_response *res)
                 break;
             }
             tmp = (cur += 4);
-            cur = strstr(cur, boundary);
+            cur = memmem(cur ,sdslen(req->body) - (cur - body),boundary ,strlen(boundary));
             if (cur == NULL)
             {
                 res->status = BAD_REQUEST;
@@ -314,6 +317,7 @@ static void process_post(const http_request *req, http_response *res)
             }
             sdsrange(path, 0, path_origin_len - 1);
             sdsclear(file_name);
+            break;
         }
     }
 
@@ -323,6 +327,34 @@ end:
     sdsfree(path);
     sdsfree(file_name);
     sdsfree(location);
+}
+
+void request_read_cb(http_connection *conn, void *arg)
+{
+    http_response res;
+    http_request *req = conn->request;
+
+    http_response_init(&res);
+
+    switch (req->method)
+    {
+    case GET:
+        process_get(req, &res);
+        break;
+
+    case POST:
+        process_post(req, &res);
+        break;
+
+    default:
+        res.status = INTERNAL_ERROR;
+        break;
+    }
+end:
+    http_response_to_buffer(&res);
+    bufferevent_write(conn->bufev, res.raw_data, sdslen(res.raw_data));
+
+    http_response_free(&res);
 }
 
 static void socket_read_cb(struct bufferevent *bev, void *arg)
@@ -422,7 +454,12 @@ static void accept_cb(int fd, short events, void *arg)
 
     // struct bufferevent* bev = bufferevent_socket_new(base, sockfd, BEV_OPT_CLOSE_ON_FREE);
     struct bufferevent* bev = bufferevent_openssl_socket_new(base, sockfd, SSL_new(ctx), BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_CLOSE_ON_FREE);
-    bufferevent_setcb(bev, socket_read_cb, NULL, event_cb, arg);
+    
+    http_connection *conn = http_connection_new(base, bev);
+
+    http_connection_set_request_cb(conn, request_read_cb, NULL);
+
+    bufferevent_setcb(bev, get_requests_cb, NULL, event_cb, arg);
 
     bufferevent_enable(bev, EV_READ | EV_PERSIST);
 }
