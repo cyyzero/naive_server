@@ -17,6 +17,7 @@
 #include "http.h"
 #include "dynamic_string.h"
 #include "tls.h"
+#include "hash_table.h"
 
 #define FORM_DATA "multipart/form-data"
 #define BOUNDARY_STR "boundary="
@@ -314,6 +315,7 @@ static void process_post(const http_request *req, http_response *res)
             }
             sdsrange(path, 0, path_origin_len - 1);
             sdsclear(file_name);
+            break;
         }
     }
 
@@ -331,9 +333,12 @@ static void socket_read_cb(struct bufferevent *bev, void *arg)
     sds buf = NULL;
     http_request req;
     http_response res;
+    int is_close = 0;
+    int is_first, is_end;
 
     http_request_init(&req);
     http_response_init(&res);
+
 
     size_t len = bufferevent_read(bev, msg, sizeof(msg));
     int ret = 0;
@@ -353,7 +358,8 @@ static void socket_read_cb(struct bufferevent *bev, void *arg)
     {
         ret = http_request_from_buffer(&req, msg, len);
     }
-
+    if (ret == -2)
+        goto release;
     if (ret == -1)
     {
         res.status = INTERNAL_ERROR;
@@ -376,11 +382,62 @@ static void socket_read_cb(struct bufferevent *bev, void *arg)
         break;
     }
 end:
+
+    connection_update((int)arg, &is_first, &is_end);
+    is_close |= is_connection_close(&req);
+    if (is_close || is_end)
+    {
+        http_header_append(&res.header, sdsnew("Connection"), sdsnew("close"));
+        connection_mask_end((int)arg);
+        bufferevent_enable(bev, EV_WRITE);
+        bufferevent_disable(bev, EV_READ);
+    }
+    else
+    {
+        if (is_first)
+        {
+            struct timeval tv = {TIME_OUT, 0};
+            bufferevent_set_timeouts(bev, &tv, NULL);
+        }
+        http_header_append(&res.header, sdsnew("Keep-Alive"), sdsnew(KEEP_ALIVE_PARAMS));
+    }
+
+
     http_response_to_buffer(&res);
     bufferevent_write(bev, res.raw_data, sdslen(res.raw_data));
 
+release:
     http_request_free(&req);
     http_response_free(&res);
+}
+
+static void socket_write_cb(struct bufferevent *bev, void *arg)
+{
+    int fd = (int)arg;
+    connection_info* conn = connection_find(fd);
+    if (conn == NULL)
+    {
+        fprintf(stderr, "buffer error");
+        bufferevent_free(bev);
+        return;
+    }
+    switch (conn->status)
+    {
+    case CONN_END:
+        if (evbuffer_get_length(bufferevent_get_output(bev)) == 0)
+        {
+            printf("close conn\n");
+            // free buffer
+            bufferevent_free(bev);
+            // free connection_info
+            connection_remove(fd);
+        }
+        break;
+    case CONN_START:
+    case CONN_SENDING:
+    default:
+        break;
+    }
 }
 
 static void event_cb(struct bufferevent *bev, short event, void *arg)
@@ -390,16 +447,24 @@ static void event_cb(struct bufferevent *bev, short event, void *arg)
     // printf("func: %s\n", ERR_func_error_string(error));
     // printf("reason: %s\n", ERR_reason_error_string(error));
     if (event & BEV_EVENT_EOF)
+    {
+        int fd = (int)arg;
+        connection_remove(fd);
         printf("connection closed\n");
-    else if (event & BEV_EVENT_ERROR)
+        return;
+    }
+    if (event & BEV_EVENT_ERROR)
         printf("some other error\n");
-    else if (event & BEV_EVENT_READING)
+    if (event & BEV_EVENT_READING)
         printf("BEV_EVENT_READING\n");
-    else if (event & BEV_EVENT_WRITING)
+    if (event & BEV_EVENT_WRITING)
         printf("BEV_EVENT_WRITING\n");
-    else if (event & BEV_EVENT_TIMEOUT)
+    if (event & BEV_EVENT_TIMEOUT)
+    {
         printf("BEV_EVENT_TIMEOUT\n");
-    else if (event & BEV_EVENT_CONNECTED)
+        bufferevent_free(bev);
+    }
+    if (event & BEV_EVENT_CONNECTED)
         printf("BEV_EVENT_CONNECTED\n");
 
     //这将自动close套接字和free读写缓冲区
@@ -422,7 +487,7 @@ static void accept_cb(int fd, short events, void *arg)
 
     // struct bufferevent* bev = bufferevent_socket_new(base, sockfd, BEV_OPT_CLOSE_ON_FREE);
     struct bufferevent* bev = bufferevent_openssl_socket_new(base, sockfd, SSL_new(ctx), BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_CLOSE_ON_FREE);
-    bufferevent_setcb(bev, socket_read_cb, NULL, event_cb, arg);
+    bufferevent_setcb(bev, socket_read_cb, socket_write_cb, event_cb, (void*)sockfd);
 
     bufferevent_enable(bev, EV_READ | EV_PERSIST);
 }
